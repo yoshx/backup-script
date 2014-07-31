@@ -1,0 +1,170 @@
+#!/bin/bash
+##############
+# script de backup
+##############
+# 
+#
+#INITIALISATION
+SCRIPT_VERSION=0.1
+EXEC_PATH=$(dirname $0)
+. $EXEC_PATH/save.cfg
+if [ $SAVECFG -ne "1" ]
+then
+	echo "LE FICHIER DE CONF N'EST PAS CORRECT"
+	exit
+fi
+case $1 in
+help)
+	echo "Utiliser le script sans argument pour lancer la sauvegarde"
+	echo "Utilisez-le avec l'option check pour voir si des sauvegardes sont en-cours ou en erreur"
+	echo "Utilisez-le avec list pour lister les sauvegardes correctes"
+	echo "Utilisez-le avec delete suivi de la sauvegarde à supprimer pour la supprimer et la purger de la bdd"
+	echo "Utilisez-le avec log pour voir le dernier log de sauvegarde"
+	echo "Utilisez-le avec conf pour voir la conf utilisée"
+	;;
+conf)
+	echo "Le dossier de sauvegarde est : $TARGET_DIR"
+	echo "L'emplacement des fichiers de conf est : $FILES"
+	echo "Il est prévu de garder $NB_SAVE sauvegardes"
+	if [ $NETWORK_BACKUP -eq "0" ]
+	then
+		echo "C'est une sauvegarde locale qui est faîte"
+	else
+		echo "C'est une sauvegarde via le réseau qui est faîte"
+		echo "L'utilisateur est $SSH_USER et l'ip est $SSH_ADDRESS"
+	fi
+	;;
+space)
+	du -sh $TARGET_DIR/*
+	;;
+log)
+	cat $LOG
+	;;
+check)
+	echo "Liste des sauvegardes non terminées (encours = arrêt prematuré du script, error = sauvegarde non terminee correctement)"
+	echo ""
+	echo "Sauvegardes encours :"
+	ls -l $TARGET_DIR | grep -i encours
+	echo "Sauvegardes non correctes :"
+	ls -l $TARGET_DIR | grep -i error
+	echo "Vérification des déphasages entre la bdd et le dossier de sauvegarde :"
+	for i in $(cat $TARGET_DIR/save.bdd)
+	do
+		ls $TARGET_DIR/$i 2>/dev/null 1>/dev/null || echo "/!\ ERREUR LA SAUVEGARDE $i SE TROUVE DANS LA BDD MAIS PAS DANS LE DOSSIER DE SAUVEGARDE"
+	done
+	for i in $(ls $TARGET_DIR | egrep -v save | egrep -v current | egrep -v liste_paquet)
+	do
+		grep -i $i $TARGET_DIR/save.bdd 2>/dev/null 1>/dev/null || echo "/!\ ERREUR LA SAUVEGARDE $i SE TROUVE DANS LE DOSSIER DE SAUVEGARDE MAIS PAS DANS LA BDD"
+	done
+	;;
+list)
+	echo "Liste des sauvegardes"
+	cat $TARGET_DIR/save.bdd
+	;;
+delete)
+	[ -z $2 ] && exit
+	echo "Suppression de la sauvegarde : $2"
+	sed -i "/$2/d" $TARGET_DIR/save.bdd 
+	rm -rf $TARGET_DIR/$2
+	;;
+*)
+	export ERROR=0
+	export TEMOIN=/tmp/save.encours
+	if [ -f $TEMOIN ]
+	then
+		echo "/!\ PB SG EN COURS !!!" | tee -a $LOG
+		exit 1
+	fi
+	acpi -V | grep Discharging && exit 0
+	> $TEMOIN
+	if [ $CHECK_MONTAGE -eq "1" ]
+	then
+		df $MONTAGE 2>/dev/null 1>/dev/null
+		if [ $? -ne "0" ]
+		then
+			echo "/!\ LE MONTAGE DE LA SAUVEGARDE N'EXISTE PAS"
+			exit
+		fi
+	fi
+	HOSTNAME_SOURCE=$1
+	if [ ! -d $TARGET_DIR/HOSTNAME_SOURCE ]
+	then
+       	  mkdir $TARGET_DIR/$HOSTNAME_SOURCE 2> /dev/null
+	fi
+	TARGET_DIR=$TARGET_DIR/$HOSTNAME_SOURCE
+	mkdir $TARGET_DIR/$DATE_SAVE.encours
+	> $LOG	
+	> $RSYNC_LOG
+	echo "*****Début de la sauvegarde `date`*****" | tee -a $LOG
+	echo "Emplacement sauvegardes : $TARGET_DIR" | tee -a $LOG
+	echo "*****Script de pre_backup `date`*****" | tee -a $LOG
+	sh $PRE_BACKUP $1
+
+	#SAUVEGARDE
+	echo "*****Sauvegarde en cours `date`*****" | tee -a $LOG
+	case $NETWORK_BACKUP in
+	0)
+		nice -n -29 rsync -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		RETOUR_SAVE=$?
+		;;
+	1)
+		nice -n -29 rsync -e ssh -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $SSH_USER@$SSH_ADDRESS:$TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		RETOUR_SAVE=$?
+		;;
+	*)
+		echo "/!\ LA VARIABLE NETWORK_BACKUP DOIT ETRE A 1 OU 0"
+		exit
+		;;
+	esac
+	if [ $RETOUR_SAVE -ne $ERROR ]
+	then
+	        echo "PB lors de la sauvegarde" | tee -a $LOG
+		echo "Code retour $RETOUR_SAVE" | tee -a $LOG
+		echo "*****Fin de la sauvegarde `date`*****" | tee -a $LOG
+		mv $TARGET_DIR/$DATE_SAVE.encours $TARGET_DIR/$DATE_SAVE.error
+	else
+	#	echo "Code retour $RETOUR_SAVE" | tee -a $LOG
+		echo "*****Fin de la sauvegarde `date`*****" | tee -a $LOG
+		mv $TARGET_DIR/$DATE_SAVE.encours $TARGET_DIR/$DATE_SAVE
+		cd $TARGET_DIR
+		rm -f current
+		ln -s  $DATE_SAVE current
+		echo $DATE_SAVE >> $TARGET_DIR/save.bdd
+		echo "*****Script de post_backup `date`*****" | tee -a $LOG
+		sh $POST_BACKUP $1
+	#	echo "*****Taille de la sauvegarde `date`*****" | tee -a $LOG
+	#	nice -n -29 du -sh $TARGET_DIR/$DATE_SAVE >> $TARGET_DIR/save.txt | tee -a $LOG
+	#	grep $DATE_SAVE $TARGET_DIR/save.txt
+	#	echo "*****Taille totale des sauvegardes `date`*****" | tee -a $LOG
+	#	cat $TARGET_DIR/save.txt | tee -a $LOG
+		echo "*****Purge des sauvegardes`date`*****" | tee -a $LOG
+		echo "NB à garder : $NB_SAVE" | tee -a $LOG
+		NB_SAVES=$(wc -l $TARGET_DIR/save.bdd  | cut -d" " -f1)
+		echo "NB actuel : $NB_SAVES" | tee -a $LOG
+		if [ $NB_SAVES -gt $NB_SAVE ]
+		then
+			NB_A_SUPPR=$(expr $NB_SAVES - $NB_SAVE)
+			for i in $(head -n $NB_A_SUPPR $TARGET_DIR/save.bdd)
+			do
+				echo "Suppression de $i" | tee -a $LOG
+				rm -rf $TARGET_DIR/$i
+				sed -i "/$i/d" $TARGET_DIR/save.bdd
+			done
+		else
+			echo "Pas de purge a faire" | tee -a $LOG
+		fi
+	fi
+	#echo "*****Espace disque en cours `date`*****" | tee -a $LOG
+	#df -h | tee -a $LOG
+	echo "*****Fin du script `date`*****" | tee -a $LOG
+	echo " " >> $LOGG
+	echo " " >> $LOGG
+	echo " " >> $LOGG
+	echo " " >> $LOGG
+	echo " " >> $LOGG
+	echo "*****Fusion des logs `date`*****" | tee -a $LOG
+	cat $LOG >> $LOGG
+	rm -f $TEMOIN
+	exit
+	;;
+esac
