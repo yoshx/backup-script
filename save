@@ -65,7 +65,11 @@ delete)
 	[ -z $2 ] && exit
 	echo "Suppression de la sauvegarde : $2"
 	sed -i "/$2/d" $TARGET_DIR/save.bdd 
-	rm -rf $TARGET_DIR/$2
+	rm -rf $TARGET_DIR/storage/$2
+	for i in journaliere hebdomadaire annuelle
+	do
+		rm -f $TARGET_DIR/$i/$i 2> /dev/null 1> /dev/null
+	done
 	;;
 *)
 	export ERROR=0
