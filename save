@@ -211,7 +211,11 @@ delete)
 			for i in $(head -n $NB_A_SUPPR $TARGET_DIR/save.bdd)
 			do
 				echo "Suppression de $i" | tee -a $LOG
-				rm -rf $TARGET_DIR/$i
+				rm -rf $TARGET_DIR/storage/$i
+				for j in journaliere hebdomadaire annuelle
+				do
+					rm -f $TARGET_DIR/$j/$i 1> /dev/null 2> /dev/null
+				done
 				sed -i "/$i/d" $TARGET_DIR/save.bdd
 			done
 		else
