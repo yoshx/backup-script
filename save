@@ -126,10 +126,70 @@ delete)
 	#	echo "Code retour $RETOUR_SAVE" | tee -a $LOG
 		echo "*****Fin de la sauvegarde `date`*****" | tee -a $LOG
 		mv $TARGET_DIR/$DATE_SAVE.encours $TARGET_DIR/$DATE_SAVE
+		echo "Deplacement du backup dans le storage" | tee -a $LOG
+		[ -d $TARGET_DIR/storage ] || mkdir $TARGET_DIR/storage	
+		mv $TARGET_DIR/$DATE_SAVE $TARGET_DIR/storage/
 		cd $TARGET_DIR
+		[ -d $TARGET_DIR/journaliere ] || mkdir $TARGET_DIR/journaliere
 		rm -f current
-		ln -s  $DATE_SAVE current
+		ln -s $TARGET_DIR/storage/$DATE_SAVE $TARGET_DIR/journaliere/$DATE_SAVE
+		ln -s $TARGET_DIR/storage/$DATE_SAVE $TARGET_DIR/current
 		echo $DATE_SAVE >> $TARGET_DIR/save.bdd
+		if [ $FULLBACKUP -eq 1 ]
+		then
+			echo "Creation des sauvegardes mensuelles ou annuelles" | tee -a $LOG
+			[ -d $TARGET_DIR/hebdomadaire ] || mkdir $TARGET_DIR/hebdomadaire
+			[ -d $TARGET_DIR/mensuelle ] || mkdir $TARGET_DIR/mensuelle
+			[ -d $TARGET_DIR/annuelle ] || mkdir $TARGET_DIR/annuelle
+			### FAIRE DEPLACEMENT DES SAUVEGARDES HEBD MENS ET ANN
+			### A FAIRE YDU
+			if [ `ls -Al $TARGET_DIR/hebdomadaire | wc -l` -lt 2 ]
+                                then
+                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
+                                        ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/hebdomadaire/$QUOIDEPLACER
+                                fi
+			if [ `ls -Al $TARGET_DIR/mensuelle | wc -l` -lt 2 ]
+                                then
+                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
+                                        ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/mensuelle/$QUOIDEPLACER
+                                fi
+			if [ `ls -Al $TARGET_DIR/annuelle | wc -l` -lt 2 ]
+                                then
+                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
+                                        ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/annuelle/$QUOIDEPLACER
+                                fi
+			for i in $(ls -1 $TARGET_DIR/hebdomadaire | cut -d"_" -f1)
+			do	
+				DATECHECK=$(echo $DATE_SAVE | cut -d"_" -f1)
+				RESULT=$(expr $DATECHECK - $i)
+				if [ $RESULT -gt 7 ]
+				then
+					QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | tail -1)
+					ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/hebdomadaire/$QUOIDEPLACER
+				fi
+			done	
+			for i in $(ls -1 $TARGET_DIR/mensuelle | cut -d"_" -f1)
+                        do
+                                DATECHECK=$(echo $DATE_SAVE | cut -d"_" -f1)
+                                RESULT=$(expr $DATECHECK - $i)
+                                if [ $RESULT -gt 31 ]
+                                then
+                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | tail -1)
+                                        ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/mensuelle/$QUOIDEPLACER
+                                fi
+                        done    
+                        for i in $(ls -1 $TARGET_DIR/annuelle | cut -d"_" -f1)
+                        do
+                                DATECHECK=$(echo $DATE_SAVE | cut -d"_" -f1)
+                                RESULT=$(expr $DATECHECK - $i)
+                                if [ $RESULT -gt 365 ]
+                                then
+                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | tail -1)
+                                        ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/annuelle/$QUOIDEPLACER
+                                fi
+                                
+                        done
+		fi
 		echo "*****Script de post_backup `date`*****" | tee -a $LOG
 		sh $POST_BACKUP $1
 	#	echo "*****Taille de la sauvegarde `date`*****" | tee -a $LOG
