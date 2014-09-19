@@ -73,7 +73,7 @@ delete)
 	;;
 *)
 	export ERROR=0
-	export TEMOIN=/tmp/save.encours
+	export TEMOIN=/$FILES/save.encours
 	if [ -f $TEMOIN ]
 	then
 		echo "/!\ PB SG EN COURS !!!" | tee -a $LOG
@@ -108,11 +108,11 @@ delete)
 	echo "*****Sauvegarde en cours `date`*****" | tee -a $LOG
 	case $NETWORK_BACKUP in
 	0)
-		nice -n -29 rsync -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		nice -n 20 rsync -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
 		RETOUR_SAVE=$?
 		;;
 	1)
-		nice -n -29 rsync -e ssh -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $SSH_USER@$SSH_ADDRESS:$TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		nice -n 20 rsync -e ssh -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $SSH_USER@$SSH_ADDRESS:$TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
 		RETOUR_SAVE=$?
 		;;
 	*)
