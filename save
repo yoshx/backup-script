@@ -7,13 +7,29 @@
 #INITIALISATION
 SCRIPT_VERSION=0.1
 EXEC_PATH=$(dirname $0)
-. $EXEC_PATH/save.cfg
+if [ x$1 == "xconfigfile" ]
+	then
+	      echo "Fichier de config a utiliser : $2" | tee -a $LOG
+	      . $2
+	else
+	      . $EXEC_PATH/save.cfg
+fi
 if [ $SAVECFG -ne "1" ]
 then
 	echo "LE FICHIER DE CONF N'EST PAS CORRECT"
 	exit
 fi
 case $1 in
+search)
+	echo "Recherche du motif $2 dans les sauvegardes"
+	cd $TARGET_DIR/storage/
+	for i in $(ls)
+	do
+		echo "Dans la sauvegarde $i:"
+		grep -i $2 $i/liste.lst
+		echo ""
+	done
+	;;
 help)
 	echo "Utiliser le script sans argument pour lancer la sauvegarde"
 	echo "Utilisez-le avec l'option check pour voir si des sauvegardes sont en-cours ou en erreur"
@@ -48,23 +64,23 @@ check)
 	echo "Sauvegardes non correctes :"
 	ls -l $TARGET_DIR | grep -i error
 	echo "Vérification des déphasages entre la bdd et le dossier de sauvegarde :"
-	for i in $(cat $TARGET_DIR/save.bdd)
+	for i in $(cat $CHEMINBDD)
 	do
-		ls $TARGET_DIR/$i 2>/dev/null 1>/dev/null || echo "/!\ ERREUR LA SAUVEGARDE $i SE TROUVE DANS LA BDD MAIS PAS DANS LE DOSSIER DE SAUVEGARDE"
+		ls $TARGET_DIR/storage/$i 2>/dev/null 1>/dev/null || echo "/!\ ERREUR LA SAUVEGARDE $i SE TROUVE DANS LA BDD MAIS PAS DANS LE DOSSIER DE SAUVEGARDE"
 	done
-	for i in $(ls $TARGET_DIR | egrep -v save | egrep -v current | egrep -v liste_paquet)
+	for i in $(ls $TARGET_DIR/storage | egrep -v save | egrep -v current | egrep -v liste_paquet)
 	do
-		grep -i $i $TARGET_DIR/save.bdd 2>/dev/null 1>/dev/null || echo "/!\ ERREUR LA SAUVEGARDE $i SE TROUVE DANS LE DOSSIER DE SAUVEGARDE MAIS PAS DANS LA BDD"
+		grep -i $i $CHEMINBDD 2>/dev/null 1>/dev/null || echo "/!\ ERREUR LA SAUVEGARDE $i SE TROUVE DANS LE DOSSIER DE SAUVEGARDE MAIS PAS DANS LA BDD"
 	done
 	;;
 list)
 	echo "Liste des sauvegardes"
-	cat $TARGET_DIR/save.bdd
+	cat $CHEMINBDD
 	;;
 delete)
 	[ -z $2 ] && exit
 	echo "Suppression de la sauvegarde : $2"
-	sed -i "/$2/d" $TARGET_DIR/save.bdd 
+	sed -i "/$2/d" $CHEMINBDD 
 	rm -rf $TARGET_DIR/storage/$2
 	for i in journaliere hebdomadaire annuelle
 	do
@@ -73,30 +89,48 @@ delete)
 	;;
 *)
 	export ERROR=0
-	export TEMOIN=/$FILES/save.encours
+	if [ $TMPFLAG -eq 1 ]
+	then
+		export TEMOIN=/tmp/save.encours
+	else
+		export TEMOIN=/$FILES/save.encours
+	fi
 	if [ -f $TEMOIN ]
 	then
 		echo "/!\ PB SG EN COURS !!!" | tee -a $LOG
 		exit 1
 	fi
-	acpi -V | grep Discharging && exit 0
-	> $TEMOIN
+	if [ $ACPI -eq 1 ]
+	then
+		acpi -V | grep Discharging
+		if [ $? -eq 1 ]
+		then
+			echo "Il faut brancher le secteur pour lancer la sauvegarde" | tee -a $LOG
+			exit 0
+		fi
+	fi
 	if [ $CHECK_MONTAGE -eq "1" ]
 	then
-		df $MONTAGE 2>/dev/null 1>/dev/null
+		mount | grep $MONTAGE 2>/dev/null 1>/dev/null
 		if [ $? -ne "0" ]
 		then
 			echo "/!\ LE MONTAGE DE LA SAUVEGARDE N'EXISTE PAS"
 			exit
 		fi
 	fi
-	HOSTNAME_SOURCE=$1
+	> $TEMOIN
+	if [ x$1 == "xconfigfile" ]
+	then
+	    echo ""
+	else
+	    HOSTNAME_SOURCE=$1
+	fi
 	if [ ! -d $TARGET_DIR/HOSTNAME_SOURCE ]
 	then
-       	  mkdir $TARGET_DIR/$HOSTNAME_SOURCE 2> /dev/null
+       	  mkdir -p $TARGET_DIR/$HOSTNAME_SOURCE 2> /dev/null
 	fi
 	TARGET_DIR=$TARGET_DIR/$HOSTNAME_SOURCE
-	mkdir $TARGET_DIR/$DATE_SAVE.encours
+	mkdir -p $TARGET_DIR/$DATE_SAVE.encours
 	> $LOG	
 	> $RSYNC_LOG
 	echo "*****Début de la sauvegarde `date`*****" | tee -a $LOG
@@ -105,15 +139,29 @@ delete)
 	sh $PRE_BACKUP $1
 
 	#SAUVEGARDE
-	echo "*****Sauvegarde en cours `date`*****" | tee -a $LOG
+	cd $TARGET_DIR/
+        echo "*****Sauvegarde en cours `date`*****" | tee -a $LOG
+	LAST=$(cat $TARGET_DIR/last)
 	case $NETWORK_BACKUP in
 	0)
-		nice -n 20 rsync -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
-		RETOUR_SAVE=$?
+		if [ $USEFILES -eq 1 ]
+		then
+		  nice -n 19 rsync -arvz --link-dest=$TARGET_DIR/storage/$LAST/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		  RETOUR_SAVE=$?
+		else
+		  nice -n 19 rsync -arvz --link-dest=$TARGET_DIR/storage/$LAST/ --delete $SOURCEDIR/ $TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		  RETOUR_SAVE=$?
+		fi
 		;;
 	1)
-		nice -n 20 rsync -e ssh -arvz --link-dest=$TARGET_DIR/current/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $SSH_USER@$SSH_ADDRESS:$TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
-		RETOUR_SAVE=$?
+		if [ $USEFILES -eq 1 ]
+		then
+		  nice -n 19 rsync -e ssh -arvz --link-dest=$TARGET_DIR/storage/$LAST/ --delete --files-from $FILES/include_files.lst --exclude-from $FILES/exclude_files.lst / $SSH_USER@$SSH_ADDRESS:$TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		  RETOUR_SAVE=$?
+		else
+		  nice -n 19 rsync -e ssh -arvz --link-dest=$TARGET_DIR/storage/$LAST/ --delete $SOURCEDIR/ $SSH_USER@$SSH_ADDRESS:$TARGET_DIR/$DATE_SAVE.encours | tee -a $RSYNC_LOG
+		  RETOUR_SAVE=$?
+		fi
 		;;
 	*)
 		echo "/!\ LA VARIABLE NETWORK_BACKUP DOIT ETRE A 1 OU 0"
@@ -128,17 +176,18 @@ delete)
 		mv $TARGET_DIR/$DATE_SAVE.encours $TARGET_DIR/$DATE_SAVE.error
 	else
 	#	echo "Code retour $RETOUR_SAVE" | tee -a $LOG
+		echo $DATE_SAVE > $TARGET_DIR/last
 		echo "*****Fin de la sauvegarde `date`*****" | tee -a $LOG
 		mv $TARGET_DIR/$DATE_SAVE.encours $TARGET_DIR/$DATE_SAVE
 		echo "Deplacement du backup dans le storage" | tee -a $LOG
 		[ -d $TARGET_DIR/storage ] || mkdir $TARGET_DIR/storage	
 		mv $TARGET_DIR/$DATE_SAVE $TARGET_DIR/storage/
 		cd $TARGET_DIR
-		[ -d $TARGET_DIR/journaliere ] || mkdir $TARGET_DIR/journaliere
+		[ -d $CHEMINJOURNALIERE ] || mkdir $CHEMINJOURNALIERE
 		rm -f current
-		ln -s $TARGET_DIR/storage/$DATE_SAVE $TARGET_DIR/journaliere/$DATE_SAVE
+		ln -s $TARGET_DIR/storage/$DATE_SAVE $CHEMINJOURNALIERE/$DATE_SAVE
 		ln -s $TARGET_DIR/storage/$DATE_SAVE $TARGET_DIR/current
-		echo $DATE_SAVE >> $TARGET_DIR/save.bdd
+		echo $DATE_SAVE >> $CHEMINBDD
 		if [ $FULLBACKUP -eq 1 ]
 		then
 			echo "Creation des sauvegardes mensuelles ou annuelles" | tee -a $LOG
@@ -149,17 +198,17 @@ delete)
 			### A FAIRE YDU
 			if [ `ls -Al $TARGET_DIR/hebdomadaire | wc -l` -lt 2 ]
                                 then
-                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
+                                        QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/hebdomadaire/$QUOIDEPLACER
                                 fi
 			if [ `ls -Al $TARGET_DIR/mensuelle | wc -l` -lt 2 ]
                                 then
-                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
+                                        QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/mensuelle/$QUOIDEPLACER
                                 fi
 			if [ `ls -Al $TARGET_DIR/annuelle | wc -l` -lt 2 ]
                                 then
-                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
+                                        QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/annuelle/$QUOIDEPLACER
                                 fi
 			for i in $(ls -1 $TARGET_DIR/hebdomadaire | cut -d"_" -f1)
@@ -168,7 +217,7 @@ delete)
 				RESULT=$(expr $DATECHECK - $i)
 				if [ $RESULT -gt 7 ]
 				then
-					QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | tail -1)
+					QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | tail -1)
 					ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/hebdomadaire/$QUOIDEPLACER
 				fi
 			done	
@@ -178,7 +227,7 @@ delete)
                                 RESULT=$(expr $DATECHECK - $i)
                                 if [ $RESULT -gt 31 ]
                                 then
-                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | tail -1)
+                                        QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/mensuelle/$QUOIDEPLACER
                                 fi
                         done    
@@ -188,7 +237,7 @@ delete)
                                 RESULT=$(expr $DATECHECK - $i)
                                 if [ $RESULT -gt 365 ]
                                 then
-                                        QUOIDEPLACER=$(ls -1 $TARGET_DIR/journaliere | grep "_" | egrep -v current | tail -1)
+                                        QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/annuelle/$QUOIDEPLACER
                                 fi
                                 
@@ -196,19 +245,22 @@ delete)
 		fi
 		echo "*****Script de post_backup `date`*****" | tee -a $LOG
 		sh $POST_BACKUP $1
-	#	echo "*****Taille de la sauvegarde `date`*****" | tee -a $LOG
-	#	nice -n -29 du -sh $TARGET_DIR/$DATE_SAVE >> $TARGET_DIR/save.txt | tee -a $LOG
-	#	grep $DATE_SAVE $TARGET_DIR/save.txt
-	#	echo "*****Taille totale des sauvegardes `date`*****" | tee -a $LOG
-	#	cat $TARGET_DIR/save.txt | tee -a $LOG
-		echo "*****Purge des sauvegardes`date`*****" | tee -a $LOG
+		echo "Liste des fichiers dans la sauvegarde `date`" | tee -a $LOG
+		cd $TARGET_DIR/storage/$DATE_SAVE
+		find ./ > liste.lst
+		echo "*****Taille de la sauvegarde `date`*****" | tee -a $LOG
+		nice -n -29 du -sh $TARGET_DIR/storage/$DATE_SAVE >> $TARGET_DIR/save.txt | tee -a $LOG
+		grep $DATE_SAVE $TARGET_DIR/save.txt
+		echo "*****Taille totale des sauvegardes `date`*****" | tee -a $LOG
+		cat $TARGET_DIR/save.txt | tee -a $LOG
+		echo "*****Purge des sauvegardes `date`*****" | tee -a $LOG
 		echo "NB à garder : $NB_SAVE" | tee -a $LOG
-		NB_SAVES=$(wc -l $TARGET_DIR/save.bdd  | cut -d" " -f1)
+		NB_SAVES=$(wc -l $CHEMINBDD  | cut -d" " -f1)
 		echo "NB actuel : $NB_SAVES" | tee -a $LOG
 		if [ $NB_SAVES -gt $NB_SAVE ]
 		then
 			NB_A_SUPPR=$(expr $NB_SAVES - $NB_SAVE)
-			for i in $(head -n $NB_A_SUPPR $TARGET_DIR/save.bdd)
+			for i in $(head -n $NB_A_SUPPR $CHEMINBDD)
 			do
 				echo "Suppression de $i" | tee -a $LOG
 				rm -rf $TARGET_DIR/storage/$i
@@ -216,11 +268,22 @@ delete)
 				do
 					rm -f $TARGET_DIR/$j/$i 1> /dev/null 2> /dev/null
 				done
-				sed -i "/$i/d" $TARGET_DIR/save.bdd
+				sed -i "/$i/d" $CHEMINBDD
 			done
 		else
 			echo "Pas de purge a faire" | tee -a $LOG
 		fi
+		cd $TARGET_DIR/
+        	for i in $(ls | grep encours)
+        	do
+			echo "Suppression de la sauvegarde non terminee $i" | tee -a $LOG
+			rm -rf $i
+        	done
+        	for i in $(ls | grep error)
+        	do
+			echo "Suppression de la sauvegarde en erreur $i" | tee -a $LOG
+			rm -rf $i
+        	done
 	fi
 	#echo "*****Espace disque en cours `date`*****" | tee -a $LOG
 	#df -h | tee -a $LOG
@@ -232,6 +295,7 @@ delete)
 	echo " " >> $LOGG
 	echo "*****Fusion des logs `date`*****" | tee -a $LOG
 	cat $LOG >> $LOGG
+	echo "*****Fin de la sauvegarde `date`*****" | tee -a LOG
 	rm -f $TEMOIN
 	exit
 	;;
