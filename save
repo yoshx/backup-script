@@ -80,11 +80,11 @@ list)
 delete)
 	[ -z $2 ] && exit
 	echo "Suppression de la sauvegarde : $2"
-	sed -i "/$2/d" $CHEMINBDD 
+	sed -i "/$2/d" $CHEMINBDD
 	rm -rf $TARGET_DIR/storage/$2
 	for i in journaliere hebdomadaire annuelle
 	do
-		rm -f $TARGET_DIR/$i/$i 2> /dev/null 1> /dev/null
+		rm -f $TARGET_DIR/$i/$2 2> /dev/null 1> /dev/null
 	done
 	;;
 *)
@@ -131,7 +131,7 @@ delete)
 	fi
 	TARGET_DIR=$TARGET_DIR/$HOSTNAME_SOURCE
 	mkdir -p $TARGET_DIR/$DATE_SAVE.encours
-	> $LOG	
+	> $LOG
 	> $RSYNC_LOG
 	echo "*****Début de la sauvegarde `date`*****" | tee -a $LOG
 	echo "Emplacement sauvegardes : $TARGET_DIR" | tee -a $LOG
@@ -180,7 +180,7 @@ delete)
 		echo "*****Fin de la sauvegarde `date`*****" | tee -a $LOG
 		mv $TARGET_DIR/$DATE_SAVE.encours $TARGET_DIR/$DATE_SAVE
 		echo "Deplacement du backup dans le storage" | tee -a $LOG
-		[ -d $TARGET_DIR/storage ] || mkdir $TARGET_DIR/storage	
+		[ -d $TARGET_DIR/storage ] || mkdir $TARGET_DIR/storage
 		mv $TARGET_DIR/$DATE_SAVE $TARGET_DIR/storage/
 		cd $TARGET_DIR
 		[ -d $CHEMINJOURNALIERE ] || mkdir $CHEMINJOURNALIERE
@@ -212,7 +212,7 @@ delete)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/annuelle/$QUOIDEPLACER
                                 fi
 			for i in $(ls -1 $TARGET_DIR/hebdomadaire | cut -d"_" -f1)
-			do	
+			do
 				DATECHECK=$(echo $DATE_SAVE | cut -d"_" -f1)
 				RESULT=$(expr $DATECHECK - $i)
 				if [ $RESULT -gt 7 ]
@@ -220,7 +220,7 @@ delete)
 					QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | tail -1)
 					ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/hebdomadaire/$QUOIDEPLACER
 				fi
-			done	
+			done
 			for i in $(ls -1 $TARGET_DIR/mensuelle | cut -d"_" -f1)
                         do
                                 DATECHECK=$(echo $DATE_SAVE | cut -d"_" -f1)
@@ -230,7 +230,7 @@ delete)
                                         QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/mensuelle/$QUOIDEPLACER
                                 fi
-                        done    
+                        done
                         for i in $(ls -1 $TARGET_DIR/annuelle | cut -d"_" -f1)
                         do
                                 DATECHECK=$(echo $DATE_SAVE | cut -d"_" -f1)
@@ -240,7 +240,7 @@ delete)
                                         QUOIDEPLACER=$(ls -1 $CHEMINJOURNALIERE | grep "_" | egrep -v current | tail -1)
                                         ln -s $TARGET_DIR/storage/$QUOIDEPLACER $TARGET_DIR/annuelle/$QUOIDEPLACER
                                 fi
-                                
+
                         done
 		fi
 		echo "*****Script de post_backup `date`*****" | tee -a $LOG
