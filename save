@@ -4,7 +4,7 @@
 ##############
 # $id$
 # $log$
-#INITIALISATION
+#INITIALISATION 
 SCRIPT_VERSION=0.1
 EXEC_PATH=$(dirname $0)
 if [ x$1 == "xconfigfile" ]
